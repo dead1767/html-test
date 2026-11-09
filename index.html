@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TurboWarp ZIP Player</title>
+<style>
+body{font-family:Arial,sans-serif;background:#151515;color:#fff;text-align:center;padding:28px 16px}
+main{max-width:620px;margin:auto}
+button,input{font-size:16px;padding:12px;margin:10px}
+button{cursor:pointer}
+#status{white-space:pre-wrap;overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<main>
+<h1>TurboWarp ZIP Player</h1>
+<p>TurboWarp Packagerで出力したZIPファイルを選択してください。</p>
+<input id="zipFile" type="file" accept=".zip,application/zip">
+<br>
+<button id="start">ZIPを保存して起動</button>
+<p id="status">ZIPを選択してください。</p>
+</main>
+<script>
+const DB_NAME = 'twzip-player';
+const STORE_NAME = 'files';
+const ZIP_KEY = 'zip';
+
+function status(message) {
+  document.getElementById('status').textContent = message;
+}
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function saveZip(blob) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(blob, ZIP_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('保存が中断されました'));
+  });
+}
+
+document.getElementById('start').addEventListener('click', async () => {
+  const file = document.getElementById('zipFile').files[0];
+  if (!file) {
+    status('先にZIPファイルを選択してください。');
+    return;
+  }
+
+  const button = document.getElementById('start');
+  button.disabled = true;
+
+  try {
+    status('ZIPを保存しています…');
+    if (navigator.storage && navigator.storage.persist) {
+      try { await navigator.storage.persist(); } catch (_) {}
+    }
+    await saveZip(file);
+
+    status('Service Workerを登録しています…');
+    const registration = await navigator.serviceWorker.register('./sw.js', {scope: './'});
+    await navigator.serviceWorker.ready;
+
+    if (!navigator.serviceWorker.controller) {
+      status('Service Workerを有効にしています。ページを再読み込みします。');
+      location.reload();
+      return;
+    }
+
+    const channel = new MessageChannel();
+    const resetDone = new Promise(resolve => {
+      channel.port1.onmessage = () => resolve();
+      setTimeout(resolve, 3000);
+    });
+    navigator.serviceWorker.controller.postMessage({type: 'RESET'}, [channel.port2]);
+    await resetDone;
+
+    status('起動しています…');
+    location.href = './?play=1';
+  } catch (error) {
+    console.error(error);
+    status('エラー: ' + (error && error.message ? error.message : error));
+    button.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
