@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TurboWarp HTML Player</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px; background: #111; color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  header { max-width: 1100px; margin: 0 auto 14px; }
+  h1 { margin: 0 0 8px; font-size: 20px; }
+  p { margin: 6px 0; color: #ccc; font-size: 14px; line-height: 1.55; }
+  .controls {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+    max-width: 1100px; margin: 0 auto 12px;
+  }
+  input[type=file] { max-width: 100%; color: #ddd; }
+  button {
+    border: 0; border-radius: 8px; padding: 11px 16px;
+    background: #2878e8; color: white; font-size: 15px; font-weight: 600;
+  }
+  button:disabled { opacity: .45; }
+  #status { max-width: 1100px; margin: 0 auto 10px; color: #aaa; font-size: 13px; }
+  #stage {
+    width: 100%; max-width: 1100px; height: min(72vh, 720px);
+    min-height: 280px; margin: 0 auto; background: #000;
+    border: 1px solid #444; border-radius: 8px; overflow: hidden;
+  }
+  #stage:fullscreen, #stage:-webkit-full-screen {
+    width: 100vw; height: 100vh; max-width: none; min-height: 0;
+    margin: 0; border: 0; border-radius: 0; background: #000;
+  }
+  #stage:fullscreen iframe, #stage:-webkit-full-screen iframe {
+    width: 100%; height: 100%;
+  }
+  iframe { display: block; width: 100%; height: 100%; border: 0; background: #000; }
+  .note { max-width: 1100px; margin: 10px auto 0; color: #888; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>TurboWarp HTML Player</h1>
+  <p>TurboWarp Packagerで「HTML」形式に変換したファイルを選択して起動します。</p>
+</header>
+<div class="controls">
+  <input id="file" type="file" accept=".html,.htm,text/html">
+  <button id="launch" disabled>ゲームを起動</button>
+  <button id="stop" disabled>停止</button>
+  <button id="fullscreen" disabled>全画面</button>
+</div>
+<div id="status">HTMLファイルを選択してください。</div>
+<div id="stage"><iframe id="game" title="ゲーム画面" allow="autoplay; fullscreen; gamepad; accelerometer; gyroscope; clipboard-read; clipboard-write" allowfullscreen></iframe></div>
+<p class="note">※単体HTMLとして出力されたファイル向けです。外部のassetsフォルダやscript.jsを必要とするHTMLには対応していません。</p>
+<script>
+(() => {
+  const picker = document.getElementById('file');
+  const launch = document.getElementById('launch');
+  const stop = document.getElementById('stop');
+  const fullscreen = document.getElementById('fullscreen');
+  const stage = document.getElementById('stage');
+  const frame = document.getElementById('game');
+  const status = document.getElementById('status');
+  let selectedFile = null;
+  let activeUrl = null;
+
+  picker.addEventListener('change', () => {
+    selectedFile = picker.files && picker.files[0] ? picker.files[0] : null;
+    launch.disabled = !selectedFile;
+    fullscreen.disabled = !selectedFile;
+    status.textContent = selectedFile
+      ? `選択中: ${selectedFile.name}（${(selectedFile.size / 1024 / 1024).toFixed(1)} MB）。「ゲームを起動」を押してください。`
+      : 'HTMLファイルを選択してください。';
+  });
+
+  launch.addEventListener('click', () => {
+    if (!selectedFile) return;
+    if (activeUrl) URL.revokeObjectURL(activeUrl);
+    activeUrl = URL.createObjectURL(selectedFile);
+    frame.src = 'about:blank';
+    requestAnimationFrame(() => {
+      frame.src = activeUrl;
+      status.textContent = 'ゲームを読み込んでいます…';
+      stop.disabled = false;
+      fullscreen.disabled = false;
+    });
+  });
+
+  frame.addEventListener('load', () => {
+    if (frame.src && frame.src !== 'about:blank') {
+      status.textContent = 'HTMLを表示しました。ゲームの起動まで少し待ってください。';
+    }
+  });
+
+  async function toggleFullscreen() {
+    try {
+      const isFullscreen = document.fullscreenElement === stage || document.webkitFullscreenElement === stage;
+      if (isFullscreen) {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        return;
+      }
+      if (stage.requestFullscreen) await stage.requestFullscreen();
+      else if (stage.webkitRequestFullscreen) stage.webkitRequestFullscreen();
+      else {
+        status.textContent = 'このブラウザでは全画面表示に対応していません。';
+      }
+    } catch (error) {
+      status.textContent = '全画面にできませんでした。ブラウザの全画面表示に対応しているか確認してください。';
+    }
+  }
+
+  fullscreen.addEventListener('click', toggleFullscreen);
+
+  function updateFullscreenLabel() {
+    const active = document.fullscreenElement === stage || document.webkitFullscreenElement === stage;
+    fullscreen.textContent = active ? '全画面を終了' : '全画面';
+  }
+  document.addEventListener('fullscreenchange', updateFullscreenLabel);
+  document.addEventListener('webkitfullscreenchange', updateFullscreenLabel);
+
+  stop.addEventListener('click', () => {
+    frame.src = 'about:blank';
+    if (activeUrl) {
+      URL.revokeObjectURL(activeUrl);
+      activeUrl = null;
+    }
+    stop.disabled = true;
+    fullscreen.disabled = true;
+    status.textContent = '停止しました。';
+  });
+
+  window.addEventListener('beforeunload', () => {
+    if (activeUrl) URL.revokeObjectURL(activeUrl);
+  });
+})();
+</script>
+</body>
+</html>
